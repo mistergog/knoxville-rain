@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Knoxville Rainfall — 3 USGS Stations</title>
+<style>
+  :root {
+    --bg: #0f1720;
+    --card: #1b2430;
+    --ink: #e6edf3;
+    --muted: #8b95a1;
+    --accent: #4ea1ff;
+    --good: #6ad48a;
+    --dry: #ffb454;
+    --border: #2a3441;
+  }
+  html, body { background: var(--bg); color: var(--ink); margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 24px 20px 48px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 12px; margin-bottom: 6px; }
+  h1 { font-size: 22px; margin: 0; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+  button {
+    background: var(--accent); color: #03203f; border: none; padding: 7px 14px;
+    border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  .stations { display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 720px) { .stations { grid-template-columns: 1fr 1fr 1fr; } }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .name { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
+  .id { font-size: 11px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .stats { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .stat { background: rgba(255,255,255,0.03); border-radius: 6px; padding: 8px 10px; }
+  .stat .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+  .stat .val { font-size: 18px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .stat.dry .val { color: var(--dry); }
+  .stat.wet .val { color: var(--good); }
+  .last { margin-top: 12px; font-size: 11px; color: var(--muted); }
+  .last a { color: var(--muted); }
+  .err { color: #ff8b8b; font-size: 12px; margin-top: 8px; }
+  footer { margin-top: 28px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+  footer a { color: var(--muted); }
+  .updated { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Knoxville rainfall — 3 USGS gages</h1>
+      <p class="sub">Live precipitation from the USGS National Water Information System.</p>
+    </div>
+    <button id="refresh">Refresh</button>
+  </header>
+  <div id="stations" class="stations"></div>
+  <p class="updated" id="updated"></p>
+  <footer>
+    Data: USGS NWIS instantaneous values, parameter 00045 (Precipitation, total, inches).
+    All values provisional. 5-minute reporting intervals summed over each window.
+    Source: <a href="https://waterservices.usgs.gov/" target="_blank" rel="noreferrer">waterservices.usgs.gov</a>.
+  </footer>
+</div>
+
+<script>
+const STATIONS = [
+  { id: '034991109', name: 'Stock Creek at Martin Mill Rd' },
+  { id: '03535000',  name: 'Bullrun Creek near Halls Crossroads' },
+  { id: '03535400',  name: 'Beaver Creek at Solway' },
+];
+
+const fmt = (n) => (n == null || isNaN(n)) ? '—' : n.toFixed(2);
+
+function sumSince(values, msAgo) {
+  const cutoff = Date.now() - msAgo;
+  let total = 0;
+  for (const v of values) {
+    const t = new Date(v.dateTime).getTime();
+    if (t >= cutoff) {
+      const n = parseFloat(v.value);
+      if (!isNaN(n) && n >= 0) total += n;
+    }
+  }
+  return total;
+}
+
+function lastReading(values) {
+  if (!values || values.length === 0) return null;
+  const last = values[values.length - 1];
+  return { time: new Date(last.dateTime), value: parseFloat(last.value) };
+}
+
+async function fetchAll() {
+  const sites = STATIONS.map(s => s.id).join(',');
+  const url = `https://waterservices.usgs.gov/nwis/iv/?format=json&sites=${sites}&parameterCd=00045&period=P7D`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('USGS request failed: ' + r.status);
+  const j = await r.json();
+  const seriesBySite = {};
+  for (const ts of j.value.timeSeries) {
+    const siteId = ts.sourceInfo.siteCode[0].value;
+    seriesBySite[siteId] = ts.values[0].value;
+  }
+  return seriesBySite;
+}
+
+function render(seriesBySite) {
+  const container = document.getElementById('stations');
+  container.innerHTML = '';
+  for (const s of STATIONS) {
+    const values = seriesBySite[s.id] || [];
+    const h1   = sumSince(values, 60 * 60 * 1000);
+    const h24  = sumSince(values, 24 * 60 * 60 * 1000);
+    const d7   = sumSince(values, 7 * 24 * 60 * 60 * 1000);
+    const last = lastReading(values);
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    const cls = (v) => v > 0.005 ? 'wet' : 'dry';
+    card.innerHTML = `
+      <div class="name">${s.name}</div>
+      <div class="id">USGS ${s.id}</div>
+      <div class="stats">
+        <div class="stat ${cls(h1)}"><div class="lbl">Last 1h</div><div class="val">${fmt(h1)}</div></div>
+        <div class="stat ${cls(h24)}"><div class="lbl">Last 24h</div><div class="val">${fmt(h24)}</div></div>
+        <div class="stat ${cls(d7)}"><div class="lbl">Last 7d</div><div class="val">${fmt(d7)}</div></div>
+      </div>
+      <div class="last">
+        ${last ? `Most recent reading: ${last.time.toLocaleString()}` : 'No data returned.'}
+        &middot; <a href="https://waterdata.usgs.gov/monitoring-location/${s.id}/" target="_blank" rel="noreferrer">USGS page</a>
+      </div>
+    `;
+    container.appendChild(card);
+  }
+}
+
+async function load() {
+  const btn = document.getElementById('refresh');
+  const upd = document.getElementById('updated');
+  btn.disabled = true;
+  upd.textContent = 'Loading...';
+  try {
+    const data = await fetchAll();
+    render(data);
+    upd.textContent = 'Updated ' + new Date().toLocaleString() + ' (values in inches).';
+  } catch (e) {
+    upd.innerHTML = '<span class="err">Error loading data: ' + e.message + '</span>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('refresh').addEventListener('click', load);
+load();
+</script>
+</body>
+</html>
