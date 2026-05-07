@@ -19,6 +19,7 @@
   .wrap { max-width: 920px; margin: 0 auto; padding: 24px 20px 48px; }
   header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 12px; margin-bottom: 6px; }
   h1 { font-size: 22px; margin: 0; font-weight: 600; }
+  h2 { font-size: 16px; margin: 0 0 14px; font-weight: 600; }
   .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
   button {
     background: var(--accent); color: #03203f; border: none; padding: 7px 14px;
@@ -46,6 +47,32 @@
   footer { margin-top: 28px; font-size: 11px; color: var(--muted); line-height: 1.5; }
   footer a { color: var(--muted); }
   .updated { font-size: 12px; color: var(--muted); }
+
+  .estimator { margin-top: 24px; padding: 18px 20px; }
+  .est-grid { display: grid; gap: 18px; grid-template-columns: 1fr; }
+  @media (min-width: 720px) { .est-grid { grid-template-columns: 1fr 1fr; } }
+  .est-section .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 6px; }
+  .toggle-group { display: inline-flex; background: rgba(255,255,255,0.04); border-radius: 6px; padding: 2px; }
+  .toggle-group button {
+    background: transparent; color: var(--ink); padding: 5px 10px; font-size: 12px; font-weight: 500;
+    border-radius: 4px;
+  }
+  .toggle-group button.active { background: var(--accent); color: #03203f; }
+  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .row label { font-size: 12px; color: var(--muted); min-width: 110px; }
+  .row .val-inline { font-size: 12px; font-variant-numeric: tabular-nums; min-width: 60px; text-align: right; color: var(--ink); }
+  input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+  input[type="number"] {
+    background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--ink);
+    border-radius: 4px; padding: 4px 8px; font-size: 12px; width: 80px; font-family: inherit;
+  }
+  .est-result { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .big { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .progress { background: rgba(255,255,255,0.06); height: 10px; border-radius: 5px; overflow: hidden; margin: 10px 0 8px; }
+  .progress > div { background: var(--accent); height: 100%; transition: width 0.25s ease; }
+  .progress.full > div { background: var(--good); }
+  .est-summary { font-size: 13px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .est-summary strong { color: var(--ink); }
 </style>
 </head>
 <body>
@@ -58,11 +85,84 @@
     <button id="refresh">Refresh</button>
   </header>
   <div id="stations" class="stations"></div>
+
+  <div class="card estimator">
+    <h2>Butterfly Pond fill estimator</h2>
+
+    <div class="est-grid">
+      <div class="est-section">
+        <div class="lbl">Rainfall window</div>
+        <div class="toggle-group" id="window-toggle">
+          <button data-h="24">24h</button>
+          <button data-h="72">3d</button>
+          <button data-h="168" class="active">7d</button>
+          <button data-h="336">14d</button>
+          <button data-h="720">30d</button>
+        </div>
+
+        <div class="lbl" style="margin-top:14px;">Rainfall source</div>
+        <div class="toggle-group" id="source-toggle">
+          <button data-id="avg" class="active">Avg</button>
+          <button data-id="034991109">Stock</button>
+          <button data-id="03535000">Bullrun</button>
+          <button data-id="03535400">Beaver</button>
+        </div>
+
+        <div class="row" style="margin-top:14px;">
+          <label>Observed:</label>
+          <span class="val-inline" id="est-rain">— in.</span>
+        </div>
+      </div>
+
+      <div class="est-section">
+        <div class="lbl">Watershed model</div>
+
+        <div class="row">
+          <label>Watershed:</label>
+          <input type="number" id="est-area" value="328" min="1" step="1">
+          <span class="val-inline">acres</span>
+        </div>
+        <div class="row">
+          <label>Target volume:</label>
+          <input type="number" id="est-target" value="20" min="0.1" step="0.5">
+          <span class="val-inline">ac-ft</span>
+        </div>
+        <div class="row">
+          <label>Soak-in (Ia):</label>
+          <input type="range" id="est-ia" min="0" max="3" step="0.05" value="1.0">
+          <span class="val-inline" id="est-ia-val">1.00 in.</span>
+        </div>
+        <div class="row">
+          <label>Runoff fraction:</label>
+          <input type="range" id="est-runoff" min="5" max="100" step="1" value="33">
+          <span class="val-inline" id="est-runoff-val">33 %</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="est-result">
+      <div class="row" style="justify-content: space-between;">
+        <div>
+          <div class="lbl">Volume reaching pond</div>
+          <div class="big" id="est-vol">0.0 <span style="font-size:14px;color:var(--muted);">ac-ft</span></div>
+        </div>
+        <div style="text-align: right;">
+          <div class="lbl">Of target</div>
+          <div class="big" id="est-pct">0%</div>
+        </div>
+      </div>
+      <div class="progress" id="est-progress"><div style="width:0%"></div></div>
+      <div class="est-summary" id="est-summary"></div>
+    </div>
+  </div>
+
   <p class="updated" id="updated"></p>
   <footer>
     Data: USGS NWIS instantaneous values, parameter 00045 (Precipitation, total, inches).
     All values provisional. 5-minute reporting intervals summed over each window.
     Source: <a href="https://waterservices.usgs.gov/" target="_blank" rel="noreferrer">waterservices.usgs.gov</a>.
+    <br>
+    Estimator math: rain over watershed × area / 12 = ac-ft falling, × runoff fraction = ac-ft reaching pond, after subtracting initial soak-in. Pond drawdown not modeled.
   </footer>
 </div>
 
@@ -73,7 +173,17 @@ const STATIONS = [
   { id: '03535400',  name: 'Beaver Creek at Solway' },
 ];
 
-const fmt = (n) => (n == null || isNaN(n)) ? '—' : n.toFixed(2);
+const fmt = (n, d = 2) => (n == null || isNaN(n)) ? '—' : n.toFixed(d);
+
+let latestSeries = {};
+let estimator = {
+  windowHours: 168,
+  source: 'avg',
+  ia: 1.0,
+  runoff: 0.33,
+  area: 328,
+  target: 20,
+};
 
 function sumSince(values, msAgo) {
   const cutoff = Date.now() - msAgo;
@@ -96,7 +206,7 @@ function lastReading(values) {
 
 async function fetchAll() {
   const sites = STATIONS.map(s => s.id).join(',');
-  const url = `https://waterservices.usgs.gov/nwis/iv/?format=json&sites=${sites}&parameterCd=00045&period=P7D`;
+  const url = `https://waterservices.usgs.gov/nwis/iv/?format=json&sites=${sites}&parameterCd=00045&period=P30D`;
   const r = await fetch(url);
   if (!r.ok) throw new Error('USGS request failed: ' + r.status);
   const j = await r.json();
@@ -138,6 +248,53 @@ function render(seriesBySite) {
   }
 }
 
+function rainTotal() {
+  const ms = estimator.windowHours * 60 * 60 * 1000;
+  if (estimator.source === 'avg') {
+    let sum = 0, n = 0;
+    for (const s of STATIONS) {
+      sum += sumSince(latestSeries[s.id] || [], ms);
+      n++;
+    }
+    return n ? sum / n : 0;
+  }
+  return sumSince(latestSeries[estimator.source] || [], ms);
+}
+
+function renderEstimator() {
+  const total = rainTotal();
+  const effective = Math.max(0, total - estimator.ia);
+  const runoffAcFt = effective * estimator.runoff * estimator.area / 12;
+  const pct = estimator.target > 0 ? Math.min(100, runoffAcFt / estimator.target * 100) : 0;
+  const remainingAcFt = Math.max(0, estimator.target - runoffAcFt);
+
+  const acFtPerInch = estimator.runoff * estimator.area / 12;
+  let additionalRainIn;
+  if (total < estimator.ia) {
+    additionalRainIn = (estimator.ia - total) + (acFtPerInch > 0 ? estimator.target / acFtPerInch : 0);
+  } else {
+    additionalRainIn = acFtPerInch > 0 ? remainingAcFt / acFtPerInch : 0;
+  }
+
+  document.getElementById('est-rain').textContent = fmt(total) + ' in.';
+  document.getElementById('est-vol').innerHTML = fmt(runoffAcFt, 1) + ' <span style="font-size:14px;color:var(--muted);">ac-ft</span>';
+  document.getElementById('est-pct').textContent = fmt(pct, 0) + '%';
+  const prog = document.getElementById('est-progress');
+  prog.firstElementChild.style.width = pct + '%';
+  prog.classList.toggle('full', pct >= 100);
+
+  const summary = document.getElementById('est-summary');
+  if (pct >= 100) {
+    summary.innerHTML = `Target reached. <strong>${fmt(runoffAcFt, 1)} ac-ft</strong> of inferred runoff vs. <strong>${estimator.target} ac-ft</strong> target.`;
+  } else if (total < estimator.ia) {
+    summary.innerHTML = `<strong>${fmt(total)} in.</strong> hasn't yet exceeded the <strong>${fmt(estimator.ia)} in.</strong> initial soak-in. ` +
+      `At current settings, need roughly <strong>${fmt(additionalRainIn)} more in.</strong> total to reach ${estimator.target} ac-ft.`;
+  } else {
+    summary.innerHTML = `<strong>${fmt(total)} in.</strong> minus ${fmt(estimator.ia)} in. soak-in × ${fmt(estimator.runoff*100, 0)}% runoff × ${estimator.area} ac / 12 = ` +
+      `<strong>${fmt(runoffAcFt, 1)} ac-ft</strong> in pond. Need <strong>${fmt(additionalRainIn)} more in.</strong> of rain to fill 20.`;
+  }
+}
+
 async function load() {
   const btn = document.getElementById('refresh');
   const upd = document.getElementById('updated');
@@ -145,7 +302,9 @@ async function load() {
   upd.textContent = 'Loading...';
   try {
     const data = await fetchAll();
+    latestSeries = data;
     render(data);
+    renderEstimator();
     upd.textContent = 'Updated ' + new Date().toLocaleString() + ' (values in inches).';
   } catch (e) {
     upd.innerHTML = '<span class="err">Error loading data: ' + e.message + '</span>';
@@ -153,6 +312,39 @@ async function load() {
     btn.disabled = false;
   }
 }
+
+function wireToggle(containerId, key, parser) {
+  const el = document.getElementById(containerId);
+  el.addEventListener('click', (e) => {
+    if (e.target.tagName !== 'BUTTON') return;
+    for (const b of el.querySelectorAll('button')) b.classList.remove('active');
+    e.target.classList.add('active');
+    estimator[key] = parser(e.target);
+    renderEstimator();
+  });
+}
+
+wireToggle('window-toggle', 'windowHours', (b) => parseInt(b.dataset.h, 10));
+wireToggle('source-toggle', 'source', (b) => b.dataset.id);
+
+document.getElementById('est-ia').addEventListener('input', (e) => {
+  estimator.ia = parseFloat(e.target.value);
+  document.getElementById('est-ia-val').textContent = fmt(estimator.ia) + ' in.';
+  renderEstimator();
+});
+document.getElementById('est-runoff').addEventListener('input', (e) => {
+  estimator.runoff = parseInt(e.target.value, 10) / 100;
+  document.getElementById('est-runoff-val').textContent = e.target.value + ' %';
+  renderEstimator();
+});
+document.getElementById('est-area').addEventListener('input', (e) => {
+  const v = parseFloat(e.target.value);
+  if (!isNaN(v) && v > 0) { estimator.area = v; renderEstimator(); }
+});
+document.getElementById('est-target').addEventListener('input', (e) => {
+  const v = parseFloat(e.target.value);
+  if (!isNaN(v) && v > 0) { estimator.target = v; renderEstimator(); }
+});
 
 document.getElementById('refresh').addEventListener('click', load);
 load();
