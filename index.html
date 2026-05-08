@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Knoxville Rainfall — 3 USGS Stations</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <style>
   :root {
     --bg: #0f1720;
@@ -27,12 +29,12 @@
   }
   button:hover { filter: brightness(1.08); }
   button:disabled { opacity: 0.6; cursor: wait; }
-  .stations { display: grid; gap: 16px; grid-template-columns: 1fr; }
-  @media (min-width: 720px) { .stations { grid-template-columns: 1fr 1fr 1fr; } }
   .card {
     background: var(--card); border: 1px solid var(--border); border-radius: 10px;
     padding: 16px 18px;
   }
+  .stations { display: grid; gap: 16px; grid-template-columns: 1fr; margin-bottom: 24px; }
+  @media (min-width: 720px) { .stations { grid-template-columns: 1fr 1fr 1fr; } }
   .name { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
   .id { font-size: 11px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .stats { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
@@ -46,17 +48,48 @@
   .err { color: #ff8b8b; font-size: 12px; margin-top: 8px; }
   footer { margin-top: 28px; font-size: 11px; color: var(--muted); line-height: 1.5; }
   footer a { color: var(--muted); }
-  .updated { font-size: 12px; color: var(--muted); }
+  .updated { font-size: 12px; color: var(--muted); margin-top: 18px; }
 
-  .estimator { margin-top: 24px; padding: 18px 20px; }
+  /* dry-spell banner */
+  .banner-row { display: grid; gap: 10px; grid-template-columns: 1fr; margin: 0 0 22px; }
+  @media (min-width: 720px) { .banner-row { grid-template-columns: 1fr 1fr 1fr; } }
+  .chip { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .chip .dry-name { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+  .chip .dry-days { font-size: 28px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .chip .dry-days .unit { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+  .chip .dry-last { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .chip.recent .dry-days { color: var(--good); }
+  .chip.dry .dry-days { color: var(--dry); }
+
+  /* daily totals chart */
+  .section { margin-top: 24px; }
+  .chart-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .chart-name { font-size: 12px; min-width: 140px; color: var(--muted); }
+  .chart-bars { flex: 1; display: flex; gap: 1px; height: 38px; align-items: flex-end; }
+  .chart-bar { flex: 1; background: rgba(255,255,255,0.05); border-radius: 1px; min-height: 2px; }
+  .chart-bar.has-rain { background: var(--accent); }
+  .chart-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 6px; padding-left: 152px; }
+
+  /* forecast */
+  .forecast-list { display: grid; gap: 8px; grid-template-columns: 1fr; }
+  @media (min-width: 720px) { .forecast-list { grid-template-columns: 1fr 1fr; } }
+  .fc-period { background: rgba(255,255,255,0.03); border-radius: 6px; padding: 10px 12px; }
+  .fc-name { font-size: 12px; font-weight: 600; }
+  .fc-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .fc-text { font-size: 12px; margin-top: 5px; line-height: 1.4; }
+
+  /* map */
+  #map { height: 340px; border-radius: 8px; border: 1px solid var(--border); }
+  .map-info { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .gage-icon { background: transparent !important; border: none !important; }
+
+  /* estimator */
+  .estimator { margin-top: 24px; }
   .est-grid { display: grid; gap: 18px; grid-template-columns: 1fr; }
   @media (min-width: 720px) { .est-grid { grid-template-columns: 1fr 1fr; } }
   .est-section .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 6px; }
-  .toggle-group { display: inline-flex; background: rgba(255,255,255,0.04); border-radius: 6px; padding: 2px; }
-  .toggle-group button {
-    background: transparent; color: var(--ink); padding: 5px 10px; font-size: 12px; font-weight: 500;
-    border-radius: 4px;
-  }
+  .toggle-group { display: inline-flex; background: rgba(255,255,255,0.04); border-radius: 6px; padding: 2px; flex-wrap: wrap; }
+  .toggle-group button { background: transparent; color: var(--ink); padding: 5px 10px; font-size: 12px; font-weight: 500; border-radius: 4px; }
   .toggle-group button.active { background: var(--accent); color: #03203f; }
   .row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .row label { font-size: 12px; color: var(--muted); min-width: 110px; }
@@ -84,7 +117,26 @@
     </div>
     <button id="refresh">Refresh</button>
   </header>
+
+  <div id="banner" class="banner-row"></div>
+
   <div id="stations" class="stations"></div>
+
+  <div class="card section">
+    <h2>Last 30 days — daily totals</h2>
+    <div id="chart"></div>
+  </div>
+
+  <div class="card section">
+    <h2>NWS forecast for Butterfly Pond</h2>
+    <div id="forecast">Loading...</div>
+  </div>
+
+  <div class="card section">
+    <h2>Map</h2>
+    <div id="map"></div>
+    <div class="map-info">Pond marker is draggable — drag to relocate; position saves to your browser. <span id="pond-coords"></span></div>
+  </div>
 
   <div class="card estimator">
     <h2>Butterfly Pond fill estimator</h2>
@@ -116,7 +168,6 @@
 
       <div class="est-section">
         <div class="lbl">Watershed model</div>
-
         <div class="row">
           <label>Watershed:</label>
           <input type="number" id="est-area" value="328" min="1" step="1">
@@ -158,24 +209,32 @@
 
   <p class="updated" id="updated"></p>
   <footer>
-    Data: USGS NWIS instantaneous values, parameter 00045 (Precipitation, total, inches).
-    All values provisional. 5-minute reporting intervals summed over each window.
-    Source: <a href="https://waterservices.usgs.gov/" target="_blank" rel="noreferrer">waterservices.usgs.gov</a>.
+    Data: USGS NWIS instantaneous values, parameter 00045 (Precipitation, total, inches). All values provisional.
+    Forecast: NOAA <a href="https://api.weather.gov" target="_blank" rel="noreferrer">api.weather.gov</a>.
+    Map tiles: © OpenStreetMap contributors.
     <br>
-    Estimator math: rain over watershed × area / 12 = ac-ft falling, × runoff fraction = ac-ft reaching pond, after subtracting initial soak-in. Pond drawdown not modeled.
+    Estimator: rain × runoff fraction × watershed / 12, after subtracting initial soak-in. Pond drawdown not modeled. Auto-refreshes every 15 min.
   </footer>
 </div>
 
 <script>
 const STATIONS = [
-  { id: '034991109', name: 'Stock Creek at Martin Mill Rd' },
-  { id: '03535000',  name: 'Bullrun Creek near Halls Crossroads' },
-  { id: '03535400',  name: 'Beaver Creek at Solway' },
+  { id: '034991109', name: 'Stock Creek at Martin Mill Rd', short: 'Stock Creek' },
+  { id: '03535000',  name: 'Bullrun Creek near Halls Crossroads', short: 'Bullrun Creek' },
+  { id: '03535400',  name: 'Beaver Creek at Solway', short: 'Beaver Creek' },
 ];
+
+const POND_DEFAULT = { lat: 35.91992, lng: -83.87919 };
+const REFRESH_MS = 15 * 60 * 1000;
 
 const fmt = (n, d = 2) => (n == null || isNaN(n)) ? '—' : n.toFixed(d);
 
 let latestSeries = {};
+let stationGeo = {};
+let pondLocation = loadPond();
+let map = null, pondMarker = null;
+let gageMarkers = {};
+
 let estimator = {
   windowHours: 168,
   source: 'avg',
@@ -184,6 +243,28 @@ let estimator = {
   area: 328,
   target: 20,
 };
+
+function loadPond() {
+  try {
+    const saved = localStorage.getItem('pond-location');
+    if (saved) {
+      const p = JSON.parse(saved);
+      if (typeof p.lat === 'number' && typeof p.lng === 'number') return p;
+    }
+  } catch (e) {}
+  return { ...POND_DEFAULT };
+}
+
+function savePond(loc) {
+  try { localStorage.setItem('pond-location', JSON.stringify(loc)); } catch (e) {}
+}
+
+function localDayKey(date) {
+  const d = new Date(date);
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
 
 function sumSince(values, msAgo) {
   const cutoff = Date.now() - msAgo;
@@ -204,6 +285,41 @@ function lastReading(values) {
   return { time: new Date(last.dateTime), value: parseFloat(last.value) };
 }
 
+function bucketByDay(values) {
+  const buckets = new Map();
+  for (const v of values) {
+    const t = new Date(v.dateTime);
+    const key = localDayKey(t);
+    const n = parseFloat(v.value);
+    if (isNaN(n) || n < 0) continue;
+    if (!buckets.has(key)) buckets.set(key, { total: 0, date: new Date(t.getFullYear(), t.getMonth(), t.getDate()) });
+    buckets.get(key).total += n;
+  }
+  return buckets;
+}
+
+function lastNDays(values, n) {
+  const buckets = bucketByDay(values);
+  const days = [];
+  const today = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    const key = localDayKey(d);
+    days.push({ key, date: d, total: buckets.get(key)?.total || 0 });
+  }
+  return days;
+}
+
+function daysSinceLastRain(values, threshold = 0.05) {
+  const days = lastNDays(values, 30);
+  for (let i = days.length - 1; i >= 0; i--) {
+    if (days[i].total >= threshold) {
+      return { daysAgo: days.length - 1 - i, lastDate: days[i].date, lastAmount: days[i].total };
+    }
+  }
+  return { daysAgo: null, lastDate: null, lastAmount: null };
+}
+
 async function fetchAll() {
   const sites = STATIONS.map(s => s.id).join(',');
   const url = `https://waterservices.usgs.gov/nwis/iv/?format=json&sites=${sites}&parameterCd=00045&period=P30D`;
@@ -214,11 +330,15 @@ async function fetchAll() {
   for (const ts of j.value.timeSeries) {
     const siteId = ts.sourceInfo.siteCode[0].value;
     seriesBySite[siteId] = ts.values[0].value;
+    const geo = ts.sourceInfo.geoLocation && ts.sourceInfo.geoLocation.geogLocation;
+    if (geo && typeof geo.latitude === 'number') {
+      stationGeo[siteId] = { lat: geo.latitude, lng: geo.longitude };
+    }
   }
   return seriesBySite;
 }
 
-function render(seriesBySite) {
+function renderStations(seriesBySite) {
   const container = document.getElementById('stations');
   container.innerHTML = '';
   for (const s of STATIONS) {
@@ -246,6 +366,164 @@ function render(seriesBySite) {
     `;
     container.appendChild(card);
   }
+}
+
+function renderBanner(seriesBySite) {
+  const el = document.getElementById('banner');
+  el.innerHTML = '';
+  for (const s of STATIONS) {
+    const r = daysSinceLastRain(seriesBySite[s.id] || []);
+    const chip = document.createElement('div');
+    chip.className = 'chip ' + (r.daysAgo !== null && r.daysAgo <= 3 ? 'recent' : 'dry');
+    let daysText, lastText;
+    if (r.daysAgo === null) {
+      daysText = '30+';
+      lastText = 'No measurable rain in last 30 days';
+    } else if (r.daysAgo === 0) {
+      daysText = '0';
+      lastText = `Today: ${fmt(r.lastAmount)} in.`;
+    } else {
+      daysText = String(r.daysAgo);
+      lastText = `Last rain: ${r.lastDate.toLocaleDateString()} (${fmt(r.lastAmount)} in.)`;
+    }
+    chip.innerHTML = `
+      <div class="dry-name">${s.short} — days dry</div>
+      <div class="dry-days">${daysText}<span class="unit">d</span></div>
+      <div class="dry-last">${lastText}</div>
+    `;
+    el.appendChild(chip);
+  }
+}
+
+function renderChart(seriesBySite) {
+  const el = document.getElementById('chart');
+  el.innerHTML = '';
+  let max = 0.05;
+  const dataByStation = {};
+  for (const s of STATIONS) {
+    dataByStation[s.id] = lastNDays(seriesBySite[s.id] || [], 30);
+    for (const d of dataByStation[s.id]) max = Math.max(max, d.total);
+  }
+  for (const s of STATIONS) {
+    const days = dataByStation[s.id];
+    const row = document.createElement('div');
+    row.className = 'chart-row';
+    const name = document.createElement('div');
+    name.className = 'chart-name';
+    name.textContent = s.short;
+    const bars = document.createElement('div');
+    bars.className = 'chart-bars';
+    for (const d of days) {
+      const b = document.createElement('div');
+      b.className = 'chart-bar' + (d.total > 0 ? ' has-rain' : '');
+      const h = Math.max(2, (d.total / max) * 36);
+      b.style.height = h + 'px';
+      b.title = `${d.date.toLocaleDateString()}: ${fmt(d.total)} in.`;
+      bars.appendChild(b);
+    }
+    row.appendChild(name);
+    row.appendChild(bars);
+    el.appendChild(row);
+  }
+  const axis = document.createElement('div');
+  axis.className = 'chart-axis';
+  const days30 = lastNDays([], 30);
+  axis.innerHTML = `<span>${days30[0].date.toLocaleDateString()}</span>` +
+    `<span>max ${fmt(max)} in. / day</span>` +
+    `<span>${days30[days30.length-1].date.toLocaleDateString()}</span>`;
+  el.appendChild(axis);
+}
+
+async function fetchForecast() {
+  const url = `https://api.weather.gov/points/${pondLocation.lat.toFixed(4)},${pondLocation.lng.toFixed(4)}`;
+  const r = await fetch(url, { headers: { 'Accept': 'application/geo+json' } });
+  if (!r.ok) throw new Error('NWS points: ' + r.status);
+  const j = await r.json();
+  const fcUrl = j.properties.forecast;
+  const r2 = await fetch(fcUrl, { headers: { 'Accept': 'application/geo+json' } });
+  if (!r2.ok) throw new Error('NWS forecast: ' + r2.status);
+  return (await r2.json()).properties.periods;
+}
+
+async function renderForecast() {
+  const el = document.getElementById('forecast');
+  el.textContent = 'Loading forecast...';
+  try {
+    const periods = await fetchForecast();
+    el.innerHTML = '';
+    const list = document.createElement('div');
+    list.className = 'forecast-list';
+    for (const p of periods.slice(0, 6)) {
+      const card = document.createElement('div');
+      card.className = 'fc-period';
+      const pop = p.probabilityOfPrecipitation && p.probabilityOfPrecipitation.value;
+      const popText = pop != null ? ` &middot; ${pop}% precip` : '';
+      card.innerHTML = `
+        <div class="fc-name">${p.name}</div>
+        <div class="fc-meta">${p.temperature}°${p.temperatureUnit} &middot; ${p.windSpeed} ${p.windDirection}${popText}</div>
+        <div class="fc-text">${p.shortForecast}</div>
+      `;
+      list.appendChild(card);
+    }
+    el.appendChild(list);
+  } catch (e) {
+    el.innerHTML = '<span class="err">Forecast error: ' + e.message + '</span>';
+  }
+}
+
+function initOrUpdateMap() {
+  if (!window.L) return;
+  if (!map) {
+    map = L.map('map').setView([pondLocation.lat, pondLocation.lng], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    pondMarker = L.marker([pondLocation.lat, pondLocation.lng], { draggable: true })
+      .addTo(map)
+      .bindPopup('Butterfly Pond')
+      .openPopup();
+
+    pondMarker.on('dragend', () => {
+      const ll = pondMarker.getLatLng();
+      pondLocation = { lat: ll.lat, lng: ll.lng };
+      savePond(pondLocation);
+      updatePondCoordsLabel();
+      renderForecast();
+    });
+  }
+
+  for (const s of STATIONS) {
+    if (gageMarkers[s.id]) continue;
+    const geo = stationGeo[s.id];
+    if (!geo) continue;
+    const initial = s.short.charAt(0);
+    const m = L.marker([geo.lat, geo.lng], {
+      icon: L.divIcon({
+        className: 'gage-icon',
+        html: `<div style="background:#4ea1ff;color:#03203f;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.5);">${initial}</div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13]
+      })
+    }).addTo(map).bindPopup(`<strong>${s.name}</strong><br>USGS ${s.id}`);
+    gageMarkers[s.id] = m;
+  }
+
+  // Auto-fit bounds to include pond + all known gages on first render
+  if (Object.keys(gageMarkers).length === STATIONS.length && !map._fittedOnce) {
+    const points = [[pondLocation.lat, pondLocation.lng]];
+    for (const id in stationGeo) points.push([stationGeo[id].lat, stationGeo[id].lng]);
+    map.fitBounds(points, { padding: [30, 30] });
+    map._fittedOnce = true;
+  }
+
+  updatePondCoordsLabel();
+}
+
+function updatePondCoordsLabel() {
+  const el = document.getElementById('pond-coords');
+  if (el) el.textContent = `Currently: ${pondLocation.lat.toFixed(5)}, ${pondLocation.lng.toFixed(5)}`;
 }
 
 function rainTotal() {
@@ -291,7 +569,7 @@ function renderEstimator() {
       `At current settings, need roughly <strong>${fmt(additionalRainIn)} more in.</strong> total to reach ${estimator.target} ac-ft.`;
   } else {
     summary.innerHTML = `<strong>${fmt(total)} in.</strong> minus ${fmt(estimator.ia)} in. soak-in × ${fmt(estimator.runoff*100, 0)}% runoff × ${estimator.area} ac / 12 = ` +
-      `<strong>${fmt(runoffAcFt, 1)} ac-ft</strong> in pond. Need <strong>${fmt(additionalRainIn)} more in.</strong> of rain to fill 20.`;
+      `<strong>${fmt(runoffAcFt, 1)} ac-ft</strong> in pond. Need <strong>${fmt(additionalRainIn)} more in.</strong> of rain to fill ${estimator.target}.`;
   }
 }
 
@@ -303,9 +581,12 @@ async function load() {
   try {
     const data = await fetchAll();
     latestSeries = data;
-    render(data);
+    renderStations(data);
+    renderBanner(data);
+    renderChart(data);
+    initOrUpdateMap();
     renderEstimator();
-    upd.textContent = 'Updated ' + new Date().toLocaleString() + ' (values in inches).';
+    upd.textContent = 'Updated ' + new Date().toLocaleString() + ' (auto-refreshes every 15 min).';
   } catch (e) {
     upd.innerHTML = '<span class="err">Error loading data: ' + e.message + '</span>';
   } finally {
@@ -347,7 +628,11 @@ document.getElementById('est-target').addEventListener('input', (e) => {
 });
 
 document.getElementById('refresh').addEventListener('click', load);
+
 load();
+renderForecast();
+setInterval(load, REFRESH_MS);
+setInterval(renderForecast, REFRESH_MS);
 </script>
 </body>
 </html>
